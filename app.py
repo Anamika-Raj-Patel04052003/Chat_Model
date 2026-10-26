@@ -268,7 +268,6 @@ def prepare_document(sections, document_name):
     st.session_state.document_name = document_name
     st.session_state.chunks = chunks
     st.session_state.chunk_embeddings = embeddings
-    st.session_state.messages = []
 
 
 st.markdown("""
@@ -295,19 +294,23 @@ if st.session_state.document_name:
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
 
-        if message.get("sources"):
-            with st.expander("Sources"):
-                for source in message["sources"]:
-                    st.markdown(f"- {source}")
+        # Show uploaded file names, if present
+        if message.get("files"):
+            st.markdown("**📎 Uploaded documents:**")
+            for filename in message["files"]:
+                st.markdown(f"- `{filename}`")
+
+        # Show the original question or answer
+        st.markdown(message["content"])
 
 
 chat = st.chat_input(
-    "Ask anything, paste text, or attach PDF/TXT...",
+    "Ask a question or attach a PDF/TXT file...",
     accept_file="multiple",
     file_type=["pdf", "txt"]
 )
+
 
 
 if chat is not None:
@@ -348,7 +351,8 @@ if chat is not None:
             st.stop()
 
 
-    elif len(question) > 1000:
+    
+    elif len(question) > 1000000:
         pasted_text = question
 
         try:
@@ -364,30 +368,50 @@ if chat is not None:
                     "Pasted text"
                 )
 
+            # Keep the original long text visible in chat history.
             question = (
                 "Summarize this document and explain "
                 "its main points."
             )
 
+            st.session_state.messages.append({
+                "role": "user",
+                "content": pasted_text
+            })
+
         except Exception as error:
             st.error(f"Could not process pasted text: {error}")
             st.stop()
 
-    with st.chat_message("user"):
-        st.markdown(question or "📎 Document uploaded")
 
+    
     previous_messages = list(st.session_state.messages)
 
-    if question:
-        st.session_state.messages.append({
-            "role": "user",
-            "content": question
-        })
+    user_message = {
+        "role": "user",
+        "content": question or "📎 Document uploaded"
+    }
+
+    if files:
+        user_message["files"] = [
+            file.name for file in files
+        ]
+
+    st.session_state.messages.append(user_message)
+
+    # Display user's question
+    with st.chat_message("user"):
+        if files:
+            st.markdown("**📎 Uploaded documents:**")
+
+            for file in files:
+                st.markdown(f"- `{file.name}`")
+
+        st.markdown(question or "📎 Document uploaded")
 
     prompt = None
     retrieved_results = []
 
-    
     # BUILDING RAG PROMPT
      
     if question and st.session_state.document:
@@ -554,6 +578,8 @@ if chat is not None:
                         "content": answer,
                         "sources": source_labels
                     })
+                    
+                    
 
                 except Exception as error:
                     st.error(
@@ -565,5 +591,4 @@ if st.button("Clear document and chat"):
     st.session_state.document_name = ""
     st.session_state.chunks = []
     st.session_state.chunk_embeddings = None
-    st.session_state.messages = []
     st.rerun()
